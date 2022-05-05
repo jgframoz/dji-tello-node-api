@@ -11,12 +11,16 @@ class Tello {
         this.STATE_PORT = 8890;
         this.STREAM_IP = '0.0.0.0';
         this.STREAM_PORT = 11111;
+        this.RESPONSE_TIMEOUT = 7;
         this.socketIO = dgram_1.default.createSocket('udp4');
         this.socketState = dgram_1.default.createSocket('udp4');
         this.socketStream = dgram_1.default.createSocket('udp4');
+        this.socketState.bind(this.STATE_PORT);
+        this.socketState.on('message', function (msg, info) {
+            console.log('Tello State : ' + msg.toString());
+        });
         this.socketIO.on('message', function (msg, info) {
-            console.log('Data received from server : ' + msg.toString());
-            console.log('Received %d bytes from %s:%d\n', msg.length, info.address, info.port);
+            console.log('Tello Global : ' + msg.toString());
         });
     }
     /**
@@ -28,12 +32,52 @@ class Tello {
         return new Promise((resolve, reject) => {
             this.socketIO.send(command, this.SR_PORT, this.TELLO_IP, function (error) {
                 if (error) {
-                    console.log(error);
+                    reject(error);
+                }
+                resolve(command);
+            });
+        });
+    }
+    /**
+     * Sends a command to Tello using a udp socket and waits for the response
+     * This is an internal method
+     * @param  {string} command
+     */
+    sendCommandWithReturn(command) {
+        return new Promise((resolve, reject) => {
+            console.log(command);
+            this.socketIO.send(command, this.SR_PORT, this.TELLO_IP, function (error) {
+                if (error) {
+                    reject(error);
+                }
+            });
+            this.socketIO.once('message', function (msg, info) {
+                console.log('Tello response : ' + msg.toString());
+                resolve(msg.toString());
+            });
+        });
+    }
+    /**
+     * Sends a control command to Tello using a udp socket and waits for its response
+     * This is an internal method
+     * @param  {string} command
+     */
+    sendControlCommand(command) {
+        return new Promise((resolve, reject) => {
+            console.log(command);
+            this.socketIO.send(command, this.SR_PORT, this.TELLO_IP, function (error) {
+                if (error) {
+                    reject(error);
+                }
+            });
+            this.socketIO.once('message', function (msg, info) {
+                console.log('Tello response command : ' + msg.toString());
+                if (msg.toString() === 'ok') {
+                    resolve(msg.toString());
                 }
                 else {
-                    console.log('Command sent: ' + command);
+                    reject(msg.toString());
                 }
-                resolve('command');
             });
         });
     }
@@ -43,7 +87,7 @@ class Tello {
      */
     initialize() {
         console.log('Tello is about to start');
-        return this.sendCommand('command');
+        return this.sendControlCommand('command');
     }
     /**
      * Tello auto takeoff
@@ -51,7 +95,7 @@ class Tello {
      */
     takeOff() {
         console.log('Tello is going to take off');
-        return this.sendCommand('takeoff');
+        return this.sendControlCommand('takeoff');
     }
     /**
      * Tello auto land
@@ -59,56 +103,56 @@ class Tello {
      */
     land() {
         console.log('Tello landed');
-        return this.sendCommand('land');
+        return this.sendControlCommand('land');
     }
     /**
      * Set video stream on
      * Response 'ok' or 'error'
      */
     streamOn() {
-        this.sendCommand('streamon');
+        return this.sendControlCommand('streamon');
     }
     /**
      * Set video stream off
      * Response 'ok' or 'error'
      */
     streamOff() {
-        this.sendCommand('streamoff');
+        return this.sendControlCommand('streamoff');
     }
     /**
      * Stop all motors immediately
      * Response 'ok' or 'error'
      */
     stop() {
-        this.sendCommand('emergency');
+        return this.sendControlCommand('emergency');
     }
     /**
      * Tello fly up with distance x cm
      * @param  {number} x : 20 - 500
      */
     move_up(x) {
-        this.sendCommand('up ' + x);
+        return this.sendControlCommand('up ' + x);
     }
     /**
     * Tello fly down with distance x cm
     * @param  {number} x : 20 - 500
     */
     move_down(x) {
-        this.sendCommand('down ' + x);
+        return this.sendControlCommand('down ' + x);
     }
     /**
     * Tello fly left with distance x cm
     * @param  {number} x : 20 - 500
     */
     move_left(x) {
-        this.sendCommand('left ' + x);
+        return this.sendControlCommand('left ' + x);
     }
     /**
     * Tello fly right with distance x cm
     * @param  {number} x : 20 - 500
     */
     move_right(x) {
-        this.sendCommand('right ' + x);
+        return this.sendControlCommand('right ' + x);
     }
     /**
     * Tello fly forward with distance x cm
@@ -116,28 +160,74 @@ class Tello {
     */
     move_forward(x) {
         console.log('Tello moved forward');
-        return this.sendCommand('forward ' + x);
+        return this.sendControlCommand('forward ' + x);
     }
     /**
     * Tello fly back with distance x cm
     * @param  {number} x : 20 - 500
     */
     move_back(x) {
-        this.sendCommand('back ' + x);
+        return this.sendControlCommand('back ' + x);
     }
     /**
      * Tello rotate x degree clockwise
      * @param  {number} x : 1 - 3600
      */
     rotate_cw(x) {
-        this.sendCommand('cw ' + x);
+        return this.sendControlCommand('cw ' + x);
     }
     /**
      * Tello rotate x degree counter-clockwise
      * @param  {number} x : 1 - 3600
      */
     rotate_ccw(x) {
-        this.sendCommand('ccw ' + x);
+        return this.sendControlCommand('ccw ' + x);
+    }
+    /**
+     * Tello turns on motors without flying (mainly for cooling)
+     */
+    turnMotorOn() {
+        return this.sendControlCommand('motoron');
+    }
+    /**
+     * Tello turns off the motor cooling mode
+     */
+    turnMotorOff() {
+        return this.sendControlCommand('motoroff');
+    }
+    /**
+     * Get current battery percentage
+     * Value between 0 and 100
+     */
+    get_battery() {
+        return this.sendCommandWithReturn('battery?');
+    }
+    /**
+     * Get current speed (cm/s)
+     * Value between 1 and 100
+     */
+    get_speed() {
+        return this.sendCommandWithReturn('speed?');
+    }
+    /**
+     * Get current fly time (s)
+     */
+    get_time() {
+        return this.sendCommandWithReturn('time?');
+    }
+    /**
+     * Get current height (cm)
+     * Value between 0 and 3000
+     */
+    get_height() {
+        return this.sendCommandWithReturn('height?');
+    }
+    /**
+     * Get temperature (℃)
+     * Value between 0 and 90
+     */
+    get_temp() {
+        return this.sendCommandWithReturn('temp?');
     }
 }
 module.exports = Tello;
